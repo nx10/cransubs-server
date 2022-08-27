@@ -1,0 +1,15 @@
+[package]
+name = "cransubs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = {version = "0.4.22", features = ["serde"]}
+chrono-tz = "0.6.3"
+lazy_static = "1.4.0"
+regex = "1.6.0"
+suppaftp = "4.4.0"
+rocket = {version = "0.5.0-rc.2", features = ["json"]}
+serde = "1.0.143"
