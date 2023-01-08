@@ -1,9 +1,8 @@
-use chrono::{DateTime, Datelike, NaiveDate, SubsecRound, TimeZone, Timelike, Utc};
+use chrono::{DateTime, SubsecRound, Utc};
 use chrono_tz::Europe::Vienna;
 use chrono_tz::Tz;
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::time::SystemTime;
 use std::{error, str::FromStr};
 use suppaftp::list::File;
 use suppaftp::FtpStream;
@@ -53,31 +52,36 @@ impl Snapshot {
     }
 }
 
-fn local_systemtime_fix_timezone(datetime: SystemTime, tz: Tz) -> DateTime<Utc> {
-    let wrong_dt: DateTime<Utc> = DateTime::from(datetime);
+/*fn local_systemtime_fix_timezone(datetime: SystemTime, tz: Tz) -> DateTime<Utc> {
+    let wrong_dt: DateTime<Utc> = datetime.into();
     return tz
         .from_local_datetime(
-            &NaiveDate::from_ymd(wrong_dt.year(), wrong_dt.month(), wrong_dt.day()).and_hms(
+            &NaiveDate::from_ymd_opt(wrong_dt.year(), wrong_dt.month(), wrong_dt.day()).unwrap().and_hms_opt(
                 wrong_dt.hour(),
                 wrong_dt.minute(),
                 wrong_dt.second(),
-            ),
+            ).unwrap(),
         )
         .unwrap()
         .with_timezone(&Utc);
+}*/
+
+fn fix_timezone(datetime_wrong_tz: &DateTime<Utc>, actual_tz: Tz) -> chrono::LocalResult<DateTime<Tz>> {
+    datetime_wrong_tz.naive_utc().and_local_timezone(actual_tz)
 }
 
-fn create_entry(ftp_file: &File, folder: &str, request_time: &DateTime<Utc>) -> Option<Submission> {
+fn create_entry(ftp_file: &File, folder: &str, request_time: &DateTime<Utc>, modified_time: &DateTime<Utc>) -> Option<Submission> {
     if !ftp_file.is_file() {
         return None;
     }
+
     match RE_PACKAGE_FILE.captures(ftp_file.name()) {
         Some(caps) => {
             Some(Submission {
                 request_time: request_time.to_owned(),
                 folder: folder[(CRAN_ROOT.len() + 1).min(folder.len())..].to_owned(),
                 //file_name: ftpfile_sub.name().to_owned(),
-                file_time: local_systemtime_fix_timezone(ftp_file.modified(), Vienna),
+                file_time: modified_time.clone(),
                 file_bytes: ftp_file.size(),
                 pkg_name: caps.get(1).map_or("[unknown]", |c| c.as_str()).to_owned(),
                 pkg_version: caps.get(2).map_or("[unknown]", |c| c.as_str()).to_owned(),
@@ -86,6 +90,8 @@ fn create_entry(ftp_file: &File, folder: &str, request_time: &DateTime<Utc>) -> 
         None => None,
     }
 }
+
+
 
 fn capture_snapshot() -> Result<Snapshot, Box<dyn error::Error>> {
     // create connection
@@ -116,7 +122,9 @@ fn capture_snapshot() -> Result<Snapshot, Box<dyn error::Error>> {
                     folder_stack.push((depth + 1, [&ftp_path, ftp_file.name()].join("/")));
                 }
             } else if ftp_file.is_file() {
-                if let Some(entry) = create_entry(&ftp_file, &ftp_path, &request_time) {
+                let modified_time_wrong = ftp_stream.mdtm([&ftp_path, ftp_file.name()].join("/")).unwrap_or(chrono::Utc::now());
+                let modified_time = fix_timezone(&modified_time_wrong, Vienna).map(|t| t.with_timezone(&Utc)).unwrap();
+                if let Some(entry) = create_entry(&ftp_file, &ftp_path, &request_time, &modified_time) {
                     snap.submissions.push(entry);
                 }
             }
