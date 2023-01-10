@@ -1137,9 +1137,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.7.0"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e076559ef8e241f2ae3479e36f97bd5741c0330689e217ad51ce2c76808b868a"
+checksum = "48aaa5748ba571fb95cd2c85c09f629215d3a6ece942baa100950af03a34f733"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -1405,9 +1405,9 @@ checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
 
 [[package]]
 name = "suppaftp"
-version = "4.5.3"
+version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4d22973673c83d8d063e74dfca6e1759fc772103461c10dd2372e8eaa1eba9e"
+checksum = "91ba00ecec2d2022201eb403442ceb785bf39b206852f8b374c7759b323dab49"
 dependencies = [
  "chrono",
  "lazy-regex",

@@ -52,24 +52,6 @@ impl Snapshot {
     }
 }
 
-/*fn local_systemtime_fix_timezone(datetime: SystemTime, tz: Tz) -> DateTime<Utc> {
-    let wrong_dt: DateTime<Utc> = datetime.into();
-    return tz
-        .from_local_datetime(
-            &NaiveDate::from_ymd_opt(wrong_dt.year(), wrong_dt.month(), wrong_dt.day()).unwrap().and_hms_opt(
-                wrong_dt.hour(),
-                wrong_dt.minute(),
-                wrong_dt.second(),
-            ).unwrap(),
-        )
-        .unwrap()
-        .with_timezone(&Utc);
-}*/
-
-fn fix_timezone(datetime_wrong_tz: &DateTime<Utc>, actual_tz: Tz) -> chrono::LocalResult<DateTime<Tz>> {
-    datetime_wrong_tz.naive_utc().and_local_timezone(actual_tz)
-}
-
 fn create_entry(ftp_file: &File, folder: &str, request_time: &DateTime<Utc>, modified_time: &DateTime<Utc>) -> Option<Submission> {
     if !ftp_file.is_file() {
         return None;
@@ -122,8 +104,12 @@ fn capture_snapshot() -> Result<Snapshot, Box<dyn error::Error>> {
                     folder_stack.push((depth + 1, [&ftp_path, ftp_file.name()].join("/")));
                 }
             } else if ftp_file.is_file() {
-                let modified_time_wrong = ftp_stream.mdtm([&ftp_path, ftp_file.name()].join("/")).unwrap_or(chrono::Utc::now());
-                let modified_time = fix_timezone(&modified_time_wrong, Vienna).map(|t| t.with_timezone(&Utc)).unwrap();
+                let modified_time: DateTime<Utc> = ftp_stream
+                    .mdtm([&ftp_path, ftp_file.name()].join("/"))
+                    .unwrap_or(Utc::now().naive_utc())
+                    .and_local_timezone::<Tz>(Vienna)
+                    .unwrap()
+                    .with_timezone(&Utc);
                 if let Some(entry) = create_entry(&ftp_file, &ftp_path, &request_time, &modified_time) {
                     snap.submissions.push(entry);
                 }
