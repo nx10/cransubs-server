@@ -10,6 +10,6 @@ chrono = {version = "0.4.22", features = ["serde"]}
 chrono-tz = "0.8.1"
 lazy_static = "1.4.0"
 regex = "1.6.0"
-suppaftp = "4.6.0"
-rocket = {version = "0.5.0-rc.2", features = ["json"]}
+suppaftp = "5.2.1"
+rocket = {version = "0.5.0-rc.3", features = ["json"]}
 serde = "1.0.143"

@@ -104,12 +104,18 @@ fn capture_snapshot() -> Result<Snapshot, Box<dyn error::Error>> {
                     folder_stack.push((depth + 1, [&ftp_path, ftp_file.name()].join("/")));
                 }
             } else if ftp_file.is_file() {
-                let modified_time: DateTime<Utc> = ftp_stream
+                let local_time_result = ftp_stream
                     .mdtm([&ftp_path, ftp_file.name()].join("/"))
                     .unwrap_or(Utc::now().naive_utc())
-                    .and_local_timezone::<Tz>(Vienna)
-                    .unwrap()
-                    .with_timezone(&Utc);
+                    .and_local_timezone::<Tz>(Vienna);
+
+                // Daylight savings time bugfix
+                let modified_time: DateTime<Utc> = match local_time_result {
+                    chrono::LocalResult::None => Utc::now(),
+                    chrono::LocalResult::Single(t) => t.with_timezone(&Utc),
+                    chrono::LocalResult::Ambiguous(t, _) => t.with_timezone(&Utc),
+                };
+                    
                 if let Some(entry) = create_entry(&ftp_file, &ftp_path, &request_time, &modified_time) {
                     snap.submissions.push(entry);
                 }
