@@ -1,100 +1,82 @@
-#[macro_use]
-extern crate rocket;
 mod snapshot;
-use rocket::{
-    serde::{Deserialize, Serialize, json},
-    tokio::sync::{Mutex, RwLock},
-    State, fairing::{Fairing, Info, Kind}, Request, Response, http::Header, Config,
-};
+
+use axum::{Json, Router, extract::State, routing::get};
+use serde::{Deserialize, Serialize};
 use std::{
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH}, net::Ipv4Addr,
+    time::{SystemTime, UNIX_EPOCH},
 };
+use tokio::sync::{Mutex, RwLock};
+use tower_http::cors::CorsLayer;
 
-static TIMEOUT_CACHE_SECONDS: u64 = 60*10;
-
+static TIMEOUT_CACHE_SECONDS: u64 = 60 * 10;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(crate = "rocket::serde")]
 struct SnapshotContainer {
     update_interval: u64,
     snapshot: snapshot::Snapshot,
 }
 
-pub struct Cache {
-    last_update: Arc<Mutex<SystemTime>>,
-    data: Arc<RwLock<SnapshotContainer>>,
+struct AppState {
+    last_update: Mutex<SystemTime>,
+    data: RwLock<SnapshotContainer>,
 }
 
-pub struct CORS;
-
-#[rocket::async_trait]
-impl Fairing for CORS {
-    fn info(&self) -> Info {
-        Info {
-            name: "Add CORS headers to responses",
-            kind: Kind::Response
-        }
-    }
-
-    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
-        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
-        response.set_header(Header::new("Access-Control-Allow-Methods", "POST, GET, PATCH, OPTIONS"));
-        response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
-        response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
-    }
-}
-
-#[get("/")]
-fn index() -> &'static str {
+async fn index() -> &'static str {
     "Hello, CRAN!"
 }
 
-#[get("/snap")]
-async fn snap(cache: &State<Cache>) -> json::Json<SnapshotContainer> {
+async fn snap(State(state): State<Arc<AppState>>) -> Json<SnapshotContainer> {
     {
-        let mut last_update = cache.last_update.lock().await;
-
+        let mut last_update = state.last_update.lock().await;
         let now = SystemTime::now();
 
-        if now
-            .duration_since(*last_update)
-            .expect("Time went backwards")
-            .as_secs()
-            > TIMEOUT_CACHE_SECONDS
-        {
-            println!("Update cache");
+        let elapsed = now.duration_since(*last_update).unwrap_or_default();
+
+        if elapsed.as_secs() > TIMEOUT_CACHE_SECONDS {
+            tracing::info!("Refreshing cache from CRAN FTP");
             *last_update = now;
-            let mut x = cache.data.write().await;
-            match snapshot::Snapshot::capture() {
-                Ok(snap) => x.snapshot = snap,
-                Err(err) => println!("ERROR: Could not create snapshot: {}", err),
+
+            let result = tokio::task::spawn_blocking(snapshot::Snapshot::capture)
+                .await
+                .expect("Blocking task panicked");
+
+            let mut data = state.data.write().await;
+            match result {
+                Ok(snap) => data.snapshot = snap,
+                Err(err) => tracing::error!("Failed to capture snapshot: {err}"),
             }
         } else {
-            println!("Use cached");
+            tracing::debug!("Serving cached snapshot");
         }
     }
 
-    json::Json(cache.data.read().await.clone())
+    Json(state.data.read().await.clone())
 }
 
-#[launch]
-fn rocket() -> _ {
-    let config = Config {
-        port: 8080,
-        address: Ipv4Addr::new(0, 0, 0, 0).into(),
-        ..Config::debug_default()
-    };
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
 
-    rocket::build()
-        .configure(config)
-        .attach(CORS)
-        .manage(Cache {
-            last_update: Arc::new(Mutex::new(UNIX_EPOCH)),
-            data: Arc::new(RwLock::new(SnapshotContainer {
-                update_interval: TIMEOUT_CACHE_SECONDS,
-                snapshot: snapshot::Snapshot::new(),
-            })),
-        })
-        .mount("/", routes![index, snap])
+    let state = Arc::new(AppState {
+        last_update: Mutex::new(UNIX_EPOCH),
+        data: RwLock::new(SnapshotContainer {
+            update_interval: TIMEOUT_CACHE_SECONDS,
+            snapshot: snapshot::Snapshot::new(),
+        }),
+    });
+
+    let app = Router::new()
+        .route("/", get(index))
+        .route("/snap", get(snap))
+        .layer(CorsLayer::permissive())
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
+        .await
+        .expect("Failed to bind to port 8080");
+
+    tracing::info!("Listening on 0.0.0.0:8080");
+
+    axum::serve(listener, app).await.expect("Server error");
 }
