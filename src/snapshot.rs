@@ -95,10 +95,10 @@ fn capture_snapshot() -> Result<Snapshot> {
                     folder_stack.push((depth + 1, [&ftp_path, ftp_file.name()].join("/")));
                 }
             } else if ftp_file.is_file() {
-                let local_time_result = ftp_stream
-                    .mdtm([&ftp_path, ftp_file.name()].join("/"))
-                    .unwrap_or(Utc::now().naive_utc())
-                    .and_local_timezone::<Tz>(Vienna);
+                // LIST timestamps are in server-local time (Vienna);
+                // suppaftp parses them as-is, so convert to naive first
+                let naive = DateTime::<Utc>::from(ftp_file.modified()).naive_utc();
+                let local_time_result = naive.and_local_timezone::<Tz>(Vienna);
 
                 // Daylight savings time bugfix
                 let modified_time: DateTime<Utc> = match local_time_result {

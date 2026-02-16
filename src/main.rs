@@ -7,9 +7,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{Mutex, RwLock};
-use tower_http::cors::CorsLayer;
+use tower_http::{compression::CompressionLayer, cors::CorsLayer};
 
-static TIMEOUT_CACHE_SECONDS: u64 = 60 * 10;
+static TIMEOUT_CACHE_SECONDS: u64 = 60 * 5;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct SnapshotContainer {
@@ -69,6 +69,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(index))
         .route("/snap", get(snap))
+        .layer(CompressionLayer::new())
         .layer(CorsLayer::permissive())
         .with_state(state);
 
